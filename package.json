@@ -1,0 +1,90 @@
+{
+  "name": "@textoic/enlint-lsp",
+  "version": "0.1.0",
+  "description": "The enlint language server: incremental prose linting, quick fixes, ignorable cases and verified AI rewrites for any LSP client.",
+  "keywords": [
+    "lsp",
+    "language-server",
+    "writing",
+    "style",
+    "linter",
+    "prose"
+  ],
+  "homepage": "https://github.com/Textoic/enlint-lsp#readme",
+  "bugs": {
+    "url": "https://github.com/Textoic/enlint-lsp/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Textoic/enlint-lsp.git"
+  },
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "files": [
+    "dist",
+    "!dist/**/.tsbuildinfo"
+  ],
+  "bin": {
+    "enlint-lsp": "./dist/node/cli.js"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./browser": {
+      "types": "./dist/browser.d.ts",
+      "default": "./dist/browser.js"
+    },
+    "./node": {
+      "types": "./dist/node/index.d.ts",
+      "default": "./dist/node/index.js"
+    },
+    "./protocol": {
+      "types": "./dist/protocol.d.ts",
+      "default": "./dist/protocol.js"
+    },
+    "./config": {
+      "types": "./dist/config.d.ts",
+      "default": "./dist/config.js"
+    },
+    "./rewrite": {
+      "types": "./dist/rewrite/index.d.ts",
+      "default": "./dist/rewrite/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc --build",
+    "clean": "tsc --build --clean",
+    "format": "prettier --check .",
+    "format:write": "prettier --write .",
+    "lint": "eslint .",
+    "prepare": "npm run build",
+    "start": "node ./dist/node/cli.js --stdio",
+    "test": "node --test --import tsx/esm test/**/*.test.ts",
+    "test-file": "node --test --import tsx/esm",
+    "typecheck": "tsc --build --force"
+  },
+  "dependencies": {
+    "@textoic/artisan": "^0.1.0",
+    "@textoic/enlint": "^0.2.0",
+    "vscode-languageserver": "10.1.1",
+    "vscode-languageserver-textdocument": "1.0.14"
+  },
+  "devDependencies": {
+    "@types/node": "22.18.1",
+    "eslint": "9.31.0",
+    "eslint-config-pretty-strict": "10.0.0",
+    "prettier": "3.6.2",
+    "tsx": "4.20.3",
+    "typescript": "5.8.3",
+    "typescript-eslint": "8.37.0",
+    "vscode-jsonrpc": "9.0.2"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "types": ["node"],
+    "noEmit": true
+  },
+  "references": [
+    { "path": "./tsconfig.src.json" },
+    { "path": "./tsconfig.node.json" }
+  ],
+  "include": ["test/**/*.ts"]
+}
