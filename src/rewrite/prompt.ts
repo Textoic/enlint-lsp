@@ -3,15 +3,20 @@ import type { ChatMessage } from "./providers.js";
 
 export type Span = { start: number; end: number };
 
-const paragraphStartBefore = (text: string, at: number) => {
-  const found = text.lastIndexOf("\n\n", Math.max(0, at - 1));
-  return found === -1 ? 0 : found + 2;
-};
+const paragraphBreaksIn = (text: string) =>
+  [...text.matchAll(/\r?\n[ \t]*\r?\n/gu)].map(({ index, 0: found }) => ({
+    from: index,
+    to: index + found.length,
+  }));
 
-const paragraphEndAfter = (text: string, at: number) => {
-  const found = text.indexOf("\n\n", at);
-  return found === -1 ? text.length : found;
-};
+const paragraphStartBefore = (text: string, at: number) =>
+  paragraphBreaksIn(text)
+    .filter(({ to }) => to <= at)
+    .at(-1)?.to ?? 0;
+
+const paragraphEndAfter = (text: string, at: number) =>
+  paragraphBreaksIn(text).find(({ from }) => from >= at)?.from ??
+  Math.max(at, text.trimEnd().length);
 
 export const passageAround = (text: string, { start, end }: Span): Span => {
   const from = Math.max(0, Math.min(start, end));

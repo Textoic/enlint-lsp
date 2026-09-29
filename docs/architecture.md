@@ -7,6 +7,17 @@ finding each.
 
 ## Log
 
+### 2026-09-29, a paragraph ends at a blank line in any line ending
+
+`passageAround` looked for `
+
+`, which a CRLF file never contains, so on
+Windows a rewrite covered the whole file from the start to the end. It now
+splits on `?
+[ 	]*?
+`. The last paragraph ends before trailing
+whitespace, so a rewrite keeps the file's final newline.
+
 ### 2026-09-29, Ollama requests turn thinking off, and a cancelled rewrite aborts the model call
 
 qwen3.8:27b thinks before it answers. With `stream: false` and a

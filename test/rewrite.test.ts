@@ -32,6 +32,22 @@ describe("passageAround", () => {
       end: 24,
     });
   });
+
+  it("finds paragraphs in a file with Windows line endings", () => {
+    const text = "First.\r\n\r\nSecond one here.\r\n\r\nThird.";
+    assert.deepEqual(passageAround(text, { start: 12, end: 14 }), {
+      start: 10,
+      end: 26,
+    });
+  });
+
+  it("leaves the newline at the end of the file out of the last paragraph", () => {
+    const text = "First.\n\nLast one.\n";
+    assert.deepEqual(passageAround(text, { start: 10, end: 14 }), {
+      start: 8,
+      end: 17,
+    });
+  });
 });
 
 describe("cleanedAnswer", () => {
