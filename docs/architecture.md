@@ -7,14 +7,31 @@ finding each.
 
 ## Log
 
+### 2026-09-29, rewrite all issues is one paragraph rewrite per paragraph
+
+`rewriteDocument` lints the text once, widens each problem to its paragraph,
+merges paragraphs that touch, and runs the single-passage rewrite on each with
+the problems already found, so the document is not linted again per
+paragraph. Each paragraph is judged on its own: one bad answer should not
+throw away the good ones, so a failed model call becomes a rejected rewrite
+with the error as its reason. An abort still rejects the whole run. Sending
+the whole document to the model in one call was the other option; it makes
+the answer hard to verify per paragraph and runs into output limits on long
+documents.
+
+Ollama runs one paragraph at a time because a local model serves one request
+at a time anyway; OpenRouter runs three.
+
 ### 2026-09-29, a paragraph ends at a blank line in any line ending
 
 `passageAround` looked for `
 
 `, which a CRLF file never contains, so on
 Windows a rewrite covered the whole file from the start to the end. It now
-splits on `?
-[ 	]*?
+splits on `
+?
+[ 	]*
+?
 `. The last paragraph ends before trailing
 whitespace, so a rewrite keeps the file's final newline.
 

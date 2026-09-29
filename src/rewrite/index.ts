@@ -9,6 +9,7 @@ import {
 import type { Complete, Completion } from "./providers.js";
 import { styleGuide } from "./style-guide.js";
 
+export * from "./document.js";
 export * from "./prompt.js";
 export * from "./providers.js";
 export { styleGuide };
@@ -98,13 +99,16 @@ const judged = (span: Span, original: string, verdict: Verdict): Rewrite => {
   };
 };
 
-export const rewritePassage = async (
-  request: RewriteRequest,
+export const problemsWithin = (span: Span, problems: LintError[]) =>
+  problems.filter(within(span));
+
+export const rewriteSpan = async (
+  text: string,
+  span: Span,
+  before: LintError[],
   { complete, lint, guide = styleGuide, signal }: RewriteDependencies,
 ): Promise<Rewrite> => {
-  const span = passageAround(request.text, request);
-  const original = request.text.slice(span.start, span.end);
-  const before = (await lint(request.text)).filter(within(span));
+  const original = text.slice(span.start, span.end);
   const completion = await complete({
     messages: rewriteMessages({
       guide,
@@ -126,4 +130,18 @@ export const rewritePassage = async (
     before,
     after,
   });
+};
+
+export const rewritePassage = async (
+  request: RewriteRequest,
+  dependencies: RewriteDependencies,
+): Promise<Rewrite> => {
+  const span = passageAround(request.text, request);
+  const problems = await dependencies.lint(request.text);
+  return rewriteSpan(
+    request.text,
+    span,
+    problemsWithin(span, problems),
+    dependencies,
+  );
 };

@@ -77,10 +77,12 @@ Code actions on a diagnostic, in order:
 
 1. one quick fix per replacement the rule offers,
 2. `textoic.rewrite` with `{ uri, range }`, when the client set `rewrite: true`,
-3. `textoic.ignoreCase` with `{ rule, case }`, for a problem with a case,
-4. `textoic.disableRule` with `{ rule }`.
+3. `textoic.rewriteAll` with `{ uri }`, "Rewrite all issues with AI", also
+   only with `rewrite: true`,
+4. `textoic.ignoreCase` with `{ rule, case }`, for a problem with a case,
+5. `textoic.disableRule` with `{ rule }`.
 
-The three commands are the client's to implement: only the client knows where
+The commands are the client's to implement: only the client knows where
 its settings live. It then sends the new settings back through
 `workspace/didChangeConfiguration`, and the server lints again.
 
@@ -91,6 +93,8 @@ Custom methods:
 | `enlint/relint`   | request   | `{ uri }`                     | `{ ok, problems }`                               |
 | `enlint/lintText` | request  | `{ text, languageId?, uri? }` | `{ problems }`, with the config for `uri`         |
 | `enlint/rewrite`  | request   | `{ uri, range, provider }`    | the rewrite, its `range`, and whether it passed |
+| `enlint/rewriteAll` | request | `{ uri, provider }`           | `{ rewrites }`, one per paragraph with a problem |
+| `enlint/rewriteProgress` | notify | `{ uri, done, total }`   | |
 | `enlint/lintStats`| notify    | `{ uri, version, problems, parsedBlocks, reusedBlocks, durationMs }` | |
 
 `provider` is `{ kind: "ollama", model, baseUrl? }` or
@@ -99,6 +103,13 @@ paragraph, sends the paragraph, the problems in it and the style guide to the
 model, and lints the answer. It marks the rewrite as rejected, with a reason,
 when the answer is empty, cut off, less than half or more than twice the
 length, or has more problems than the original.
+
+`enlint/rewriteAll` lints the document once, rewrites each paragraph that has a
+problem, and judges each rewrite on its own, so the client can apply the ones
+that passed and skip the rest. It sends `enlint/rewriteProgress` after each
+paragraph, runs one paragraph at a time for Ollama and three for OpenRouter,
+and stops when the client cancels the request. A paragraph whose model call
+fails comes back rejected, with the error as its reason.
 
 ## Using it as a library
 
@@ -120,7 +131,8 @@ import { startWorkerServer } from "@textoic/enlint-lsp/browser";
 startWorkerServer({ dictionary: "/artisan/dictionary.json", weights: "/artisan/weights.json" });
 ```
 
-`@textoic/enlint-lsp/rewrite` exports the rewrite pipeline on its own, and
+`@textoic/enlint-lsp/rewrite` exports the rewrite pipeline on its own
+(`rewritePassage`, `rewriteDocument`, `passagesWithProblems`, `withRewrites`), and
 `@textoic/enlint-lsp/config` the config helpers (`withIgnoredCase`,
 `withSeverity`, ...) that clients use to edit settings.
 

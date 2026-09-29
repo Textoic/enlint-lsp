@@ -115,6 +115,9 @@ const rewriteAction = (uri: string, diagnostic: Diagnostic) =>
     range: diagnostic.range,
   });
 
+const rewriteAllAction = (uri: string) =>
+  commandAction("Rewrite all issues with AI", Commands.rewriteAll, { uri });
+
 export type ActionOptions = { rewrite: boolean };
 
 const actionsFor = (
@@ -125,7 +128,9 @@ const actionsFor = (
   const data = diagnostic.data as DiagnosticData;
   return [
     ...data.fixes.map(quickFix(document, diagnostic, data.rule)),
-    ...(rewrite ? [rewriteAction(document.uri, diagnostic)] : []),
+    ...(rewrite
+      ? [rewriteAction(document.uri, diagnostic), rewriteAllAction(document.uri)]
+      : []),
     ...ignoreCaseAction(data),
     commandAction(`Turn off ${data.rule}`, Commands.disableRule, {
       rule: data.rule,

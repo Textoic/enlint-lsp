@@ -9,12 +9,15 @@ export const Methods = {
   lintText: "enlint/lintText",
   lintStats: "enlint/lintStats",
   rewrite: "enlint/rewrite",
+  rewriteAll: "enlint/rewriteAll",
+  rewriteProgress: "enlint/rewriteProgress",
 } as const;
 
 export const Commands = {
   ignoreCase: "textoic.ignoreCase",
   disableRule: "textoic.disableRule",
   rewrite: "textoic.rewrite",
+  rewriteAll: "textoic.rewriteAll",
 } as const;
 
 export const diagnosticSource = "textoic";
@@ -68,3 +71,17 @@ export type LintStats = {
 export type RewriteParams = RewriteArguments & { provider: ProviderSettings };
 
 export type RewriteResult = Rewrite & { range: Range };
+
+export type RewriteAllArguments = { uri: string };
+
+export type RewriteAllParams = RewriteAllArguments & {
+  provider: ProviderSettings;
+};
+
+export type RewriteAllResult = { rewrites: RewriteResult[] };
+
+export type RewriteProgressParams = {
+  uri: string;
+  done: number;
+  total: number;
+};

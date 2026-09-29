@@ -7,7 +7,10 @@ import {
   completionFor,
   listModels,
   passageAround,
+  passagesWithProblems,
+  rewriteDocument,
   rewritePassage,
+  withRewrites,
   styleGuide,
   type Complete,
 } from "../src/rewrite/index.js";
@@ -199,5 +202,82 @@ describe("style guide", () => {
       "utf8",
     );
     assert.equal(styleGuide, source);
+  });
+});
+
+describe("passagesWithProblems", () => {
+  it("returns each paragraph with a problem once, in order", () => {
+    const text = "One bad.\n\nClean.\n\nTwo bad, three bad.";
+    assert.deepEqual(
+      passagesWithProblems(text, [
+        problem(30, 33),
+        problem(4, 7),
+        problem(20, 23),
+      ]),
+      [
+        { start: 0, end: 8 },
+        { start: 18, end: 37 },
+      ],
+    );
+  });
+});
+
+describe("withRewrites", () => {
+  it("replaces every passage at its original offsets", () => {
+    const text = "One bad.\n\nClean.\n\nTwo bad.";
+    assert.equal(
+      withRewrites(text, [
+        { start: 0, end: 8, replacement: "One good, and longer." },
+        { start: 18, end: 26, replacement: "Two." },
+      ]),
+      "One good, and longer.\n\nClean.\n\nTwo.",
+    );
+  });
+});
+
+describe("rewriteDocument", () => {
+  const text = "One bad.\n\nClean.\n\nTwo bad.";
+  const lintText = (input: string) =>
+    input === text ? [problem(4, 7), problem(22, 25)] : [];
+  const failsOnTwo: Complete = ({ messages }) =>
+    (messages.at(-1)?.content ?? "").includes("Two")
+      ? Promise.reject(new Error("offline"))
+      : Promise.resolve({ content: "One good.", truncated: false });
+
+  it("rewrites each paragraph, reports progress and explains a failure", async () => {
+    const progress: string[] = [];
+    const rewrites = await rewriteDocument(text, {
+      complete: failsOnTwo,
+      lint: lintText,
+      concurrency: 2,
+      onProgress: ({ done, total }) => progress.push(`${done}/${total}`),
+    });
+    assert.deepEqual(
+      rewrites.map(({ start, end, accepted }) => [start, end, accepted]),
+      [
+        [0, 8, true],
+        [18, 26, false],
+      ],
+    );
+    assert.equal(rewrites[0]?.replacement, "One good.");
+    assert.equal(rewrites[1]?.reason, "the request failed: offline");
+    assert.deepEqual(progress, ["0/2", "1/2", "2/2"]);
+  });
+
+  it("stops when the signal aborts", async () => {
+    const controller = new AbortController();
+    const abortOnFirst: Complete = () => {
+      controller.abort();
+      return Promise.reject(
+        Object.assign(new Error("aborted"), { name: "AbortError" }),
+      );
+    };
+    await assert.rejects(
+      rewriteDocument(text, {
+        complete: abortOnFirst,
+        lint: lintText,
+        signal: controller.signal,
+      }),
+    );
   });
 });

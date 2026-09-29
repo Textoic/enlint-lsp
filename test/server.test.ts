@@ -25,6 +25,8 @@ import {
   type ClientSettings,
   type LintStats,
   type LintTextResult,
+  type RewriteAllResult,
+  type RewriteProgressParams,
   type RewriteResult,
 } from "../src/index.js";
 import { loadParser, projectConfigFor } from "../src/node/index.js";
@@ -185,10 +187,11 @@ describe("language server", () => {
     assert.deepEqual(titlesOf(actions), [
       'Replace with "filthy" (no-explained-intensifiers)',
       "Rewrite this passage with AI",
+      "Rewrite all issues with AI",
       'Ignore "dirty" everywhere',
       "Turn off no-explained-intensifiers",
     ]);
-    const ignore = actions[2].command;
+    const ignore = actions[3].command;
     assert.equal(ignore?.command, Commands.ignoreCase);
     assert.deepEqual(ignore?.arguments, [
       { rule: "no-explained-intensifiers", case: "dirty" },
@@ -261,6 +264,53 @@ describe("language server", () => {
       start: { line: 2, character: 0 },
       end: { line: 2, character: PASSIVE.length },
     });
+  });
+});
+
+describe("rewrite all", () => {
+  it("rewrites every paragraph with a problem and reports progress", async () => {
+    const fixes: Complete = ({ messages }) =>
+      Promise.resolve({
+        content: (messages.at(-1)?.content ?? "").includes("written")
+          ? "The committee wrote the report."
+          : "The room was filthy.",
+        truncated: false,
+      });
+    const client = await start({ debounceMs: 100 }, "", fixes);
+    const progress: RewriteProgressParams[] = [];
+    client.connection.onNotification(
+      Methods.rewriteProgress,
+      (params: RewriteProgressParams) => {
+        progress.push(params);
+      },
+    );
+    const uri = "file:///virtual/all.md";
+    await open(
+      client,
+      uri,
+      `The room was very dirty.\n\nThis is fine.\n\n${PASSIVE}`,
+    );
+    const result: RewriteAllResult = await client.connection.sendRequest(
+      Methods.rewriteAll,
+      { uri, provider: { kind: "ollama", model: "fake" } },
+    );
+    assert.deepEqual(
+      result.rewrites.map(({ replacement, accepted, range }) => [
+        replacement,
+        accepted,
+        range.start.line,
+      ]),
+      [
+        ["The room was filthy.", true, 0],
+        ["The committee wrote the report.", true, 4],
+      ],
+    );
+    await until(() => progress.length === 3);
+    assert.deepEqual(
+      progress.map(({ done, total }) => `${done}/${total}`),
+      ["0/2", "1/2", "2/2"],
+    );
+    client.connection.dispose();
   });
 });
 
