@@ -188,14 +188,65 @@ describe("language server", () => {
       'Replace with "filthy" (no-explained-intensifiers)',
       "Rewrite this passage with AI",
       "Rewrite all issues with AI",
+      "Ignore this instance",
       'Ignore "dirty" everywhere',
       "Turn off no-explained-intensifiers",
     ]);
-    const ignore = actions[3].command;
+    const instance = actions[3].command;
+    assert.equal(instance?.command, Commands.ignoreInstance);
+    assert.deepEqual(instance?.arguments, [
+      {
+        uri,
+        instance: {
+          rule: "no-explained-intensifiers",
+          quote: "very dirty",
+          context: "The room was very dirty.",
+        },
+      },
+    ]);
+    const ignore = actions[4].command;
     assert.equal(ignore?.command, Commands.ignoreCase);
     assert.deepEqual(ignore?.arguments, [
       { rule: "no-explained-intensifiers", case: "dirty" },
     ]);
+  });
+
+  it("hides an ignored instance in that document only", async () => {
+    const uri = "file:///virtual/instance.md";
+    const text = "The room was very dirty. The hall was very dirty.";
+    const before = await open(client, uri, text);
+    assert.equal(before.length, 2);
+    const count = client.published.length;
+    await client.connection.sendNotification(
+      "workspace/didChangeConfiguration",
+      {
+        settings: {
+          textoic: {
+            debounceMs: 100,
+            ignoredInstances: {
+              [uri]: [
+                {
+                  rule: "no-explained-intensifiers",
+                  quote: "very dirty",
+                  context: "The hall was very dirty.",
+                },
+              ],
+            },
+          },
+        },
+      },
+    );
+    await until(() =>
+      client.published
+        .slice(count)
+        .some(
+          (params) => params.uri === uri && params.diagnostics.length === 1,
+        ),
+    );
+    const latest = client.published
+      .filter((params) => params.uri === uri)
+      .at(-1);
+    assert.equal(latest?.diagnostics[0]?.range.start.character, 13);
   });
 
   it("drops an ignored case once the client sends new settings", async () => {

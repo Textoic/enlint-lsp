@@ -52,7 +52,7 @@ as listed in [enlint's catalog](https://github.com/Textoic/enlint#the-rule-catal
 
 The server builds each document's config from two layers:
 
-1. **Client settings.** The editor sends `{ config, debounceMs, rewrite }` as
+1. **Client settings.** The editor sends `{ config, debounceMs, rewrite, ignoredInstances }` as
    `initializationOptions` and again under `textoic` in
    `workspace/didChangeConfiguration`. VS Code stores them in user settings;
    the desktop app in its settings file; the website in the browser.
@@ -79,8 +79,18 @@ Code actions on a diagnostic, in order:
 2. `textoic.rewrite` with `{ uri, range }`, when the client set `rewrite: true`,
 3. `textoic.rewriteAll` with `{ uri }`, "Rewrite all issues with AI", also
    only with `rewrite: true`,
-4. `textoic.ignoreCase` with `{ rule, case }`, for a problem with a case,
-5. `textoic.disableRule` with `{ rule }`.
+4. `textoic.ignoreInstance` with `{ uri, instance }`, "Ignore this instance",
+5. `textoic.ignoreCase` with `{ rule, case }`, for a problem with a case,
+6. `textoic.disableRule` with `{ rule }`.
+
+An ignored instance is `{ rule, quote, context }`: the rule, the flagged words
+and the sentence around them, with whitespace squeezed. The client keeps them
+per document and sends them as `ignoredInstances: { [uri]: IgnoredInstance[] }`.
+The server hides a problem whose rule, words and sentence all match, so the
+ignore survives edits elsewhere in the document and lapses once that sentence
+changes. The main export also has the helpers the editors' issue panels use:
+`instanceOf`, `withInstance`, `withoutInstance`, `groupedByRule` (most issues
+first) and `overlapping` (issues in the visible range).
 
 The commands are the client's to implement: only the client knows where
 its settings live. It then sends the new settings back through

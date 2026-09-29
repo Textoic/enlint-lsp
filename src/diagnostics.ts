@@ -10,6 +10,7 @@ import {
 } from "vscode-languageserver";
 import type { TextDocument } from "vscode-languageserver-textdocument";
 import type { ActiveSeverity, ResolvedConfig } from "./config.js";
+import { instanceOf } from "./issues.js";
 import {
   Commands,
   diagnosticSource,
@@ -115,6 +116,20 @@ const rewriteAction = (uri: string, diagnostic: Diagnostic) =>
     range: diagnostic.range,
   });
 
+const ignoreInstanceAction = (
+  document: TextDocument,
+  diagnostic: Diagnostic,
+  rule: string,
+) =>
+  commandAction("Ignore this instance", Commands.ignoreInstance, {
+    uri: document.uri,
+    instance: instanceOf(document.getText(), {
+      id: rule,
+      start: document.offsetAt(diagnostic.range.start),
+      end: document.offsetAt(diagnostic.range.end),
+    }),
+  });
+
 const rewriteAllAction = (uri: string) =>
   commandAction("Rewrite all issues with AI", Commands.rewriteAll, { uri });
 
@@ -129,8 +144,12 @@ const actionsFor = (
   return [
     ...data.fixes.map(quickFix(document, diagnostic, data.rule)),
     ...(rewrite
-      ? [rewriteAction(document.uri, diagnostic), rewriteAllAction(document.uri)]
+      ? [
+          rewriteAction(document.uri, diagnostic),
+          rewriteAllAction(document.uri),
+        ]
       : []),
+    ignoreInstanceAction(document, diagnostic, data.rule),
     ...ignoreCaseAction(data),
     commandAction(`Turn off ${data.rule}`, Commands.disableRule, {
       rule: data.rule,

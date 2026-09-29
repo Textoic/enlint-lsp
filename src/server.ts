@@ -1,3 +1,4 @@
+import type { LintError } from "@textoic/enlint/types";
 import {
   TextDocuments,
   TextDocumentSyncKind,
@@ -15,6 +16,7 @@ import {
   type TextoicConfig,
 } from "./config.js";
 import { codeActionsFor, rangeOf, toDiagnostic } from "./diagnostics.js";
+import { withoutIgnoredInstances } from "./issues.js";
 import { DocumentLinter } from "./linter.js";
 import type { TextFormat } from "./markdown.js";
 import type { Parser } from "./parser.js";
@@ -91,12 +93,14 @@ export class Workspace {
       return this.published.get(document.uri)?.length ?? 0;
     }
 
+    const text = document.getText();
     const run = this.linterOf(document.uri, parser).lint(
-      document.getText(),
+      text,
       toEnlintConfig(config),
       formatOf(document),
     );
-    const diagnostics = run.problems.map((problem) =>
+    const problems = this.withoutIgnored(document.uri, text, run.problems);
+    const diagnostics = problems.map((problem) =>
       toDiagnostic(document, problem, config),
     );
     this.published.set(document.uri, diagnostics);
@@ -174,8 +178,20 @@ export class Workspace {
     ]);
     const format = formatOf(document);
     return (text: string) =>
-      new DocumentLinter(parser).lint(text, toEnlintConfig(config), format)
-        .problems;
+      this.withoutIgnored(
+        document.uri,
+        text,
+        new DocumentLinter(parser).lint(text, toEnlintConfig(config), format)
+          .problems,
+      );
+  }
+
+  private withoutIgnored(uri: string, text: string, problems: LintError[]) {
+    return withoutIgnoredInstances(
+      text,
+      problems,
+      this.settings.ignoredInstances?.[uri] ?? [],
+    );
   }
 
   completionFor(provider: ProviderSettings): Complete {

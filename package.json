@@ -47,6 +47,10 @@
       "types": "./dist/protocol.d.ts",
       "default": "./dist/protocol.js"
     },
+    "./issues": {
+      "types": "./dist/issues.d.ts",
+      "default": "./dist/issues.js"
+    },
     "./config": {
       "types": "./dist/config.d.ts",
       "default": "./dist/config.js"

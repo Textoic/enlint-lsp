@@ -1,6 +1,7 @@
 import type { LintError } from "@textoic/enlint/types";
 import type { Range } from "vscode-languageserver";
 import type { TextoicConfig } from "./config.js";
+import type { IgnoredInstance, IgnoredInstances } from "./issues.js";
 import type { Rewrite } from "./rewrite/index.js";
 import type { ProviderSettings } from "./rewrite/providers.js";
 
@@ -18,6 +19,7 @@ export const Commands = {
   disableRule: "textoic.disableRule",
   rewrite: "textoic.rewrite",
   rewriteAll: "textoic.rewriteAll",
+  ignoreInstance: "textoic.ignoreInstance",
 } as const;
 
 export const diagnosticSource = "textoic";
@@ -37,6 +39,7 @@ export type ClientSettings = {
   config?: TextoicConfig;
   debounceMs?: number;
   rewrite?: boolean;
+  ignoredInstances?: IgnoredInstances;
 };
 
 export type SettingsSection = { textoic?: ClientSettings };
@@ -84,4 +87,9 @@ export type RewriteProgressParams = {
   uri: string;
   done: number;
   total: number;
+};
+
+export type IgnoreInstanceArguments = {
+  uri: string;
+  instance: IgnoredInstance;
 };

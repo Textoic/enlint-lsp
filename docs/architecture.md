@@ -7,6 +7,18 @@ finding each.
 
 ## Log
 
+### 2026-09-29, an ignored instance is its rule, its words and its sentence
+
+"Ignore this instance" has to survive edits elsewhere in the document, so
+offsets will not do. The instance is `{ rule, quote, context }`, where
+`context` is the sentence around the problem with whitespace squeezed. The
+same words in another sentence, or the same sentence under another rule,
+still show. Editing the sentence brings the problem back, which is the honest
+outcome: the writer ignored that sentence, not whatever replaced it. The
+filter runs on published diagnostics and inside `lintFor`, so rewrites and
+`enlint/lintText` for that URI respect it too. Clients own the storage; the
+server only sees the list for each URI in the settings.
+
 ### 2026-09-29, rewrite all issues is one paragraph rewrite per paragraph
 
 `rewriteDocument` lints the text once, widens each problem to its paragraph,
