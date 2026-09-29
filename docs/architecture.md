@@ -7,6 +7,20 @@ finding each.
 
 ## Log
 
+### 2026-09-29, Ollama requests turn thinking off, and a cancelled rewrite aborts the model call
+
+qwen3.8:27b thinks before it answers. With `stream: false` and a
+`num_predict` of 225 tokens for a one-sentence passage, the thinking used the
+whole budget: Ollama answered in 11 s with empty content and
+`done_reason: "length"`, and every rewrite came back rejected as empty. The
+request now sends `think: false`. The same prompt then answered in 0.8 s with
+the rewrite. granite4.1:3b, which has no thinking mode, accepts the flag.
+
+`enlint/rewrite` honours LSP cancellation. The handler turns the request's
+cancellation token into an `AbortSignal` that reaches `fetch`, so cancelling
+the editor's progress notification stops a slow local model. An aborted fetch
+keeps its `AbortError` instead of becoming "Cannot reach the host".
+
 ### 2026-09-27, the server was lifted out of the textoic app, and its core runs in a browser
 
 The first language server lived in `textoic/packages/lsp` and took its linter

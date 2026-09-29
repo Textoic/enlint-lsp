@@ -6,6 +6,7 @@ import { PassThrough } from "node:stream";
 import { after, before, describe, it } from "node:test";
 import { pathToFileURL } from "node:url";
 import {
+  CancellationTokenSource,
   createMessageConnection,
   StreamMessageReader,
   StreamMessageWriter,
@@ -66,6 +67,7 @@ const fakeCompletion =
 const start = async (
   settings: ClientSettings,
   answer = "The committee wrote the report.",
+  completion: Complete = fakeCompletion(answer),
 ): Promise<Client> => {
   const up = new PassThrough();
   const down = new PassThrough();
@@ -76,7 +78,7 @@ const start = async (
   attachLanguageServer(server, {
     parser: () => parser,
     projectConfig: projectConfigFor,
-    completion: () => fakeCompletion(answer),
+    completion: () => completion,
   });
   server.listen();
   const connection = createMessageConnection(
@@ -259,6 +261,37 @@ describe("language server", () => {
       start: { line: 2, character: 0 },
       end: { line: 2, character: PASSIVE.length },
     });
+  });
+});
+
+describe("rewrite cancellation", () => {
+  it("aborts the model call when the client cancels the request", async () => {
+    let aborted = false;
+    const waitsForAbort: Complete = ({ signal }) =>
+      new Promise((_resolve, reject) => {
+        signal?.addEventListener("abort", () => {
+          aborted = true;
+          reject(Object.assign(new Error("aborted"), { name: "AbortError" }));
+        });
+      });
+    const client = await start({ debounceMs: 100 }, "", waitsForAbort);
+    const uri = "file:///virtual/cancel.md";
+    const [diagnostic] = await open(client, uri, PASSIVE);
+    const source = new CancellationTokenSource();
+    const pending = client.connection.sendRequest(
+      Methods.rewrite,
+      {
+        uri,
+        range: diagnostic.range,
+        provider: { kind: "ollama", model: "slow" },
+      },
+      source.token,
+    );
+    await pause();
+    source.cancel();
+    await assert.rejects(pending);
+    await until(() => aborted);
+    client.connection.dispose();
   });
 });
 

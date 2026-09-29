@@ -7,6 +7,7 @@ export type CompletionRequest = {
   messages: ChatMessage[];
   maxOutputTokens: number;
   temperature?: number;
+  signal?: AbortSignal;
 };
 
 export type Completion = {
@@ -54,7 +55,14 @@ const withoutReasoning = (content: string) =>
 
 const hostOf = (url: string) => new URL(url).host;
 
-const unreachable = (url: string) => () => {
+const isAbort = (cause: unknown) =>
+  cause instanceof Error && cause.name === "AbortError";
+
+const unreachable = (url: string) => (cause: unknown) => {
+  if (isAbort(cause)) {
+    throw cause;
+  }
+
   throw new ProviderError(`Cannot reach ${hostOf(url)}.`);
 };
 
@@ -69,15 +77,24 @@ const checked = async (url: string, response: Response) => {
   return response.json() as Promise<unknown>;
 };
 
-type Post = { body: unknown; headers?: Record<string, string> };
+type Post = {
+  body: unknown;
+  headers?: Record<string, string>;
+  signal?: AbortSignal;
+};
 
-const postJson = async (fetchFn: Fetch, url: string, { body, headers }: Post) =>
+const postJson = async (
+  fetchFn: Fetch,
+  url: string,
+  { body, headers, signal }: Post,
+) =>
   checked(
     url,
     await fetchFn(url, {
       method: "POST",
       headers: { "content-type": "application/json", ...headers },
       body: JSON.stringify(body),
+      signal,
     }).catch(unreachable(url)),
   );
 
@@ -100,10 +117,12 @@ const ollamaCompletion =
   ({ model, baseUrl = defaultOllamaUrl }: OllamaSettings, fetchFn: Fetch) =>
   async (request: CompletionRequest): Promise<Completion> => {
     const answer = (await postJson(fetchFn, `${baseUrl}/api/chat`, {
+      signal: request.signal,
       body: {
         model,
         messages: request.messages,
         stream: false,
+        think: false,
         options: {
           temperature: request.temperature ?? 0.3,
           num_predict: request.maxOutputTokens,
@@ -162,6 +181,7 @@ const openRouterCompletion =
   async (request: CompletionRequest): Promise<Completion> =>
     fromOpenRouter(
       (await postJson(fetchFn, `${baseUrl}/chat/completions`, {
+        signal: request.signal,
         headers: openRouterHeaders(apiKey),
         body: {
           model,

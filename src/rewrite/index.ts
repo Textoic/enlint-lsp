@@ -31,6 +31,7 @@ export type RewriteDependencies = {
   complete: Complete;
   lint: Lint;
   guide?: string;
+  signal?: AbortSignal;
 };
 
 const wordsIn = (text: string) => (text.match(/\S+/gu) ?? []).length;
@@ -99,7 +100,7 @@ const judged = (span: Span, original: string, verdict: Verdict): Rewrite => {
 
 export const rewritePassage = async (
   request: RewriteRequest,
-  { complete, lint, guide = styleGuide }: RewriteDependencies,
+  { complete, lint, guide = styleGuide, signal }: RewriteDependencies,
 ): Promise<Rewrite> => {
   const span = passageAround(request.text, request);
   const original = request.text.slice(span.start, span.end);
@@ -113,6 +114,7 @@ export const rewritePassage = async (
     }),
     maxOutputTokens: outputTokensFor(original),
     temperature: 0.3,
+    signal,
   });
   const replacement = cleanedAnswer(completion.content);
   const after = replacement === "" ? [] : await lint(replacement);

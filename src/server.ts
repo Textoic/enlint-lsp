@@ -1,6 +1,7 @@
 import {
   TextDocuments,
   TextDocumentSyncKind,
+  type CancellationToken,
   type Connection,
   type Diagnostic,
   type InitializeParams,
@@ -265,9 +266,20 @@ const lintText =
     return { problems: lint(text) };
   };
 
+const abortedWith = (token: CancellationToken) => {
+  const controller = new AbortController();
+  token.onCancellationRequested(() => {
+    controller.abort();
+  });
+  return controller.signal;
+};
+
 const rewrite =
   (workspace: Workspace) =>
-  async ({ uri, range, provider }: RewriteParams): Promise<RewriteResult> => {
+  async (
+    { uri, range, provider }: RewriteParams,
+    token: CancellationToken,
+  ): Promise<RewriteResult> => {
     const document = workspace.documents.get(uri);
     if (document == null) {
       throw new Error(`${uri} is not open.`);
@@ -283,6 +295,7 @@ const rewrite =
       {
         complete: workspace.completionFor(provider),
         lint: await workspace.lintFor(document),
+        signal: abortedWith(token),
       },
     );
     return { ...result, range: rangeOf(document, result.start, result.end) };

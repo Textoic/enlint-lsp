@@ -1,6 +1,6 @@
 {
   "name": "@textoic/enlint-lsp",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "The enlint language server: incremental prose linting, quick fixes, ignorable cases and verified AI rewrites for any LSP client.",
   "keywords": [
     "lsp",

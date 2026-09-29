@@ -120,6 +120,50 @@ describe("providers", () => {
     );
   });
 
+  it("asks Ollama to answer without thinking and passes the abort signal", async () => {
+    const sent: {
+      body: Record<string, unknown>;
+      signal?: AbortSignal | null;
+    }[] = [];
+    const fakeFetch = (_url: string, init?: RequestInit) => {
+      sent.push({
+        body: JSON.parse(init?.body as string) as Record<string, unknown>,
+        signal: init?.signal,
+      });
+      return Promise.resolve(
+        Response.json({ message: { content: "Done." }, done_reason: "stop" }),
+      );
+    };
+    const controller = new AbortController();
+    const complete = completionFor(
+      { kind: "ollama", model: "qwen" },
+      fakeFetch as typeof fetch,
+    );
+    const answer = await complete({
+      messages: [],
+      maxOutputTokens: 10,
+      signal: controller.signal,
+    });
+    assert.equal(answer.content, "Done.");
+    assert.equal(sent[0].body.think, false);
+    assert.equal(sent[0].body.stream, false);
+    assert.equal(sent[0].signal, controller.signal);
+  });
+
+  it("lets an aborted request fail as an abort, not as an unreachable host", async () => {
+    const fakeFetch = () =>
+      Promise.reject(
+        Object.assign(new Error("aborted"), { name: "AbortError" }),
+      );
+    const complete = completionFor(
+      { kind: "ollama", model: "qwen" },
+      fakeFetch as typeof fetch,
+    );
+    await assert.rejects(complete({ messages: [], maxOutputTokens: 10 }), {
+      name: "AbortError",
+    });
+  });
+
   it("lists Ollama models from its tags", async () => {
     const fakeFetch = () =>
       Promise.resolve(
