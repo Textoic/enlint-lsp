@@ -9,6 +9,24 @@ const paragraphBreaksIn = (text: string) =>
     to: index + found.length,
   }));
 
+const isBlank = ({ start, end }: Span, text: string) =>
+  text.slice(start, end).trim() === "";
+
+const leadingSpaceAt = (text: string, at: number) =>
+  /^\s*/u.exec(text.slice(at))?.[0].length ?? 0;
+
+export const paragraphsIn = (text: string): Span[] => {
+  const breaks = paragraphBreaksIn(text);
+  const starts = [0, ...breaks.map(({ to }) => to)];
+  const ends = [...breaks.map(({ from }) => from), text.trimEnd().length];
+  return starts
+    .map((start, index) => ({
+      start: start + leadingSpaceAt(text, start),
+      end: Math.max(start, ends[index]),
+    }))
+    .filter((span) => !isBlank(span, text));
+};
+
 const paragraphStartBefore = (text: string, at: number) =>
   paragraphBreaksIn(text)
     .filter(({ to }) => to <= at)

@@ -51,6 +51,14 @@
       "types": "./dist/issues.d.ts",
       "default": "./dist/issues.js"
     },
+    "./fixes": {
+      "types": "./dist/fixes.d.ts",
+      "default": "./dist/fixes.js"
+    },
+    "./diff": {
+      "types": "./dist/diff.d.ts",
+      "default": "./dist/diff.js"
+    },
     "./config": {
       "types": "./dist/config.d.ts",
       "default": "./dist/config.js"

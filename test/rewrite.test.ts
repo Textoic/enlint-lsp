@@ -7,6 +7,8 @@ import {
   completionFor,
   listModels,
   passageAround,
+  chunksWithProblems,
+  paragraphsIn,
   passagesWithProblems,
   rewriteDocument,
   rewritePassage,
@@ -222,6 +224,88 @@ describe("passagesWithProblems", () => {
   });
 });
 
+describe("paragraphsIn", () => {
+  it("lists every paragraph without the blank lines between them", () => {
+    assert.deepEqual(paragraphsIn("One.\n\n\nTwo.\r\n\r\nThree.\n"), [
+      { start: 0, end: 4 },
+      { start: 7, end: 11 },
+      { start: 15, end: 21 },
+    ]);
+  });
+});
+
+describe("chunksWithProblems", () => {
+  const words = (count: number) =>
+    Array.from({ length: count }, () => "word").join(" ");
+
+  it("packs flagged paragraphs and the clean ones between them into one chunk", () => {
+    const text = "One bad.\n\nClean.\n\nTwo bad.\n\nClean tail.";
+    assert.deepEqual(
+      chunksWithProblems(text, [problem(4, 7), problem(22, 25)]),
+      [{ start: 0, end: 26 }],
+    );
+  });
+
+  it("starts a new chunk when the next paragraph would pass the word limit", () => {
+    const paragraph = `${words(4)} bad.`;
+    const text = `${paragraph}\n\n${paragraph}`;
+    const second = paragraph.length + 2;
+    assert.deepEqual(
+      chunksWithProblems(
+        text,
+        [problem(20, 23), problem(second + 20, second + 23)],
+        { maxWords: 6, maxChars: 1000, maxProblems: 100 },
+      ),
+      [
+        { start: 0, end: paragraph.length },
+        { start: second, end: text.length },
+      ],
+    );
+  });
+
+  it("splits a long paragraph at sentence ends and keeps only the flagged pieces", () => {
+    const text =
+      "Bad one here. Clean two here. Clean three here. Bad four here.";
+    const chunks = chunksWithProblems(text, [problem(0, 3), problem(48, 51)], {
+      maxWords: 3,
+      maxChars: 1000,
+      maxProblems: 100,
+    });
+    assert.deepEqual(
+      chunks.map(({ start, end }) => text.slice(start, end)),
+      ["Bad one here.", "Bad four here."],
+    );
+  });
+
+  it("never cuts through a problem", () => {
+    const text = "Bad. One more sentence here.";
+    const chunks = chunksWithProblems(text, [problem(0, 10)], {
+      maxWords: 1,
+      maxChars: 1000,
+      maxProblems: 100,
+    });
+    assert.deepEqual(
+      chunks.map(({ start, end }) => text.slice(start, end)),
+      ["Bad. One more"],
+    );
+  });
+});
+
+describe("chunksWithProblems and the problem cap", () => {
+  it("starts a new chunk before one passes the problem limit", () => {
+    const text = "Bad one. Bad two. Bad three.";
+    const chunks = chunksWithProblems(
+      text,
+      [problem(0, 3), problem(9, 12), problem(18, 21)],
+      { maxWords: 100, maxChars: 1000, maxProblems: 2 },
+    );
+    assert.deepEqual(
+      chunks.map(({ start, end }) => text.slice(start, end)),
+      ["Bad one. Bad two.", "Bad three."],
+    );
+  });
+});
+
 describe("withRewrites", () => {
   it("replaces every passage at its original offsets", () => {
     const text = "One bad.\n\nClean.\n\nTwo bad.";
@@ -250,6 +334,7 @@ describe("rewriteDocument", () => {
       complete: failsOnTwo,
       lint: lintText,
       concurrency: 2,
+      limits: { maxWords: 2, maxChars: 100, maxProblems: 100 },
       onProgress: ({ done, total }) => progress.push(`${done}/${total}`),
     });
     assert.deepEqual(
@@ -262,6 +347,23 @@ describe("rewriteDocument", () => {
     assert.equal(rewrites[0]?.replacement, "One good.");
     assert.equal(rewrites[1]?.reason, "the request failed: offline");
     assert.deepEqual(progress, ["0/2", "1/2", "2/2"]);
+  });
+
+  it("rewrites only the problems in the scope", async () => {
+    const scoped = await rewriteDocument(text, {
+      complete: () =>
+        Promise.resolve({ content: "Two good.", truncated: false }),
+      lint: (input: string) =>
+        input === text
+          ? [problem(4, 7), { ...problem(22, 25), id: "no-similes" as never }]
+          : [],
+      scope: { rule: "no-similes" },
+      limits: { maxWords: 2, maxChars: 100, maxProblems: 100 },
+    });
+    assert.deepEqual(
+      scoped.map(({ start, end }) => [start, end]),
+      [[18, 26]],
+    );
   });
 
   it("stops when the signal aborts", async () => {

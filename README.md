@@ -8,11 +8,11 @@ the rewrite with the same rules before offering it.
 
 One server serves every client:
 
-| Client                                                         | Transport                   |
-| -------------------------------------------------------------- | --------------------------- |
+| Client                                                            | Transport                   |
+| ----------------------------------------------------------------- | --------------------------- |
 | [textoic-code](https://github.com/Textoic/textoic-code) (VS Code) | stdio, `enlint-lsp --stdio` |
-| [textoic-desktop](https://github.com/Textoic/textoic-desktop)   | stdio or in-process         |
-| [textoic.com](https://textoic.com)                              | a Web Worker in the browser |
+| [textoic-desktop](https://github.com/Textoic/textoic-desktop)     | stdio or in-process         |
+| [textoic.com](https://textoic.com)                                | a Web Worker in the browser |
 
 ```sh
 npm install @textoic/enlint-lsp
@@ -77,8 +77,12 @@ Code actions on a diagnostic, in order:
 
 1. one quick fix per replacement the rule offers,
 2. `textoic.rewrite` with `{ uri, range }`, when the client set `rewrite: true`,
-3. `textoic.rewriteAll` with `{ uri }`, "Rewrite all issues with AI", also
-   only with `rewrite: true`,
+3. `textoic.applyAll` with `{ uri, scope, label }`, "Apply all …", once for
+   the problem's case, once for its rule and once for the whole file, each
+   only when that level holds more than one problem. `scope` is
+   `{ rule?, case? }`; `{}` means the file. The client asks whether to apply
+   only the rules' own fixes or the fixes and then AI rewrites for what is left
+   (see below),
 4. `textoic.ignoreInstance` with `{ uri, instance }`, "Ignore this instance",
 5. `textoic.ignoreCase` with `{ rule, case }`, for a problem with a case,
 6. `textoic.disableRule` with `{ rule }`.
@@ -98,14 +102,15 @@ its settings live. It then sends the new settings back through
 
 Custom methods:
 
-| Method            | Direction | Params                        | Result                                           |
-| ----------------- | --------- | ----------------------------- | ------------------------------------------------ |
-| `enlint/relint`   | request   | `{ uri }`                     | `{ ok, problems }`                               |
-| `enlint/lintText` | request  | `{ text, languageId?, uri? }` | `{ problems }`, with the config for `uri`         |
-| `enlint/rewrite`  | request   | `{ uri, range, provider }`    | the rewrite, its `range`, and whether it passed |
-| `enlint/rewriteAll` | request | `{ uri, provider }`           | `{ rewrites }`, one per paragraph with a problem |
-| `enlint/rewriteProgress` | notify | `{ uri, done, total }`   | |
-| `enlint/lintStats`| notify    | `{ uri, version, problems, parsedBlocks, reusedBlocks, durationMs }` | |
+| Method                   | Direction | Params                                                               | Result                                                                                        |
+| ------------------------ | --------- | -------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| `enlint/relint`          | request   | `{ uri }`                                                            | `{ ok, problems }`                                                                            |
+| `enlint/lintText`        | request   | `{ text, languageId?, uri? }`                                        | `{ problems }`, with the config for `uri`                                                     |
+| `enlint/rewrite`         | request   | `{ uri, range, provider }`                                           | the rewrite, its `range`, and whether it passed                                               |
+| `enlint/fixAll`          | request   | `{ uri, scope? }`                                                    | `{ edits, remaining }`: the fixes to apply, and how many problems in the scope need a rewrite |
+| `enlint/rewriteAll`      | request   | `{ uri, provider, scope? }`                                          | `{ rewrites }`, one per chunk with a problem                                                  |
+| `enlint/rewriteProgress` | notify    | `{ uri, done, total, rewrite?, index? }`                             | each finished chunk comes with its rewrite                                                    |
+| `enlint/lintStats`       | notify    | `{ uri, version, problems, parsedBlocks, reusedBlocks, durationMs }` |                                                                                               |
 
 `provider` is `{ kind: "ollama", model, baseUrl? }` or
 `{ kind: "openrouter", model, apiKey }`. The server widens the range to its
@@ -114,12 +119,24 @@ model, and lints the answer. It marks the rewrite as rejected, with a reason,
 when the answer is empty, cut off, less than half or more than twice the
 length, or has more problems than the original.
 
-`enlint/rewriteAll` lints the document once, rewrites each paragraph that has a
-problem, and judges each rewrite on its own, so the client can apply the ones
-that passed and skip the rest. It sends `enlint/rewriteProgress` after each
-paragraph, runs one paragraph at a time for Ollama and three for OpenRouter,
-and stops when the client cancels the request. A paragraph whose model call
-fails comes back rejected, with the error as its reason.
+`enlint/rewriteAll` lints the document once, keeps the problems in `scope`,
+and packs the paragraphs that have one into chunks of at most 500 words and
+3,500 characters, with no more than 40 problems (`chunksWithProblems`). Clean paragraphs between two flagged
+ones ride along when they fit; a paragraph longer than the limit is split at
+sentence ends, never inside a problem. Each chunk is rewritten and judged on
+its own, so the client can apply the ones that passed and skip the rest. It
+sends `enlint/rewriteProgress` with each finished chunk, runs one chunk at a
+time for Ollama and three for OpenRouter, and stops when the client cancels
+the request. A chunk whose model call fails comes back rejected, with the
+error as its reason.
+
+"Apply all" is two steps. `enlint/fixAll` returns the first fix of every
+problem in the scope that has one, dropping fixes that overlap an earlier one;
+the client applies them as one edit. In "fixes and rewrites" mode the client
+then calls `enlint/rewriteAll` with the same scope, which now only finds the
+problems no rule could fix. `@textoic/enlint-lsp/fixes` has the same logic as
+plain functions (`applyFixes`, `fixEditsFor`, `problemsInScope`, `countsIn`)
+for clients that lint in-process.
 
 ## Using it as a library
 
@@ -128,7 +145,9 @@ import { resolveConfig, toEnlintConfig, lintText } from "@textoic/enlint-lsp";
 import { loadParser } from "@textoic/enlint-lsp/node";
 
 const parse = await loadParser();
-const config = toEnlintConfig(resolveConfig({ rules: { "no-similes": "off" } }));
+const config = toEnlintConfig(
+  resolveConfig({ rules: { "no-similes": "off" } }),
+);
 lintText(parse, "The report was written by the committee.", config);
 ```
 
@@ -138,11 +157,14 @@ files, which the page serves as static assets:
 ```ts
 import { startWorkerServer } from "@textoic/enlint-lsp/browser";
 
-startWorkerServer({ dictionary: "/artisan/dictionary.json", weights: "/artisan/weights.json" });
+startWorkerServer({
+  dictionary: "/artisan/dictionary.json",
+  weights: "/artisan/weights.json",
+});
 ```
 
 `@textoic/enlint-lsp/rewrite` exports the rewrite pipeline on its own
-(`rewritePassage`, `rewriteDocument`, `passagesWithProblems`, `withRewrites`), and
+(`rewritePassage`, `rewriteDocument`, `chunksWithProblems`, `passagesWithProblems`, `withRewrites`), and
 `@textoic/enlint-lsp/config` the config helpers (`withIgnoredCase`,
 `withSeverity`, ...) that clients use to edit settings.
 

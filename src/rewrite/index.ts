@@ -9,6 +9,7 @@ import {
 import type { Complete, Completion } from "./providers.js";
 import { styleGuide } from "./style-guide.js";
 
+export * from "./chunks.js";
 export * from "./document.js";
 export * from "./prompt.js";
 export * from "./providers.js";

@@ -16,6 +16,7 @@ import {
   type TextoicConfig,
 } from "./config.js";
 import { codeActionsFor, rangeOf, toDiagnostic } from "./diagnostics.js";
+import { fixEditsFor, problemsInScope } from "./fixes.js";
 import { withoutIgnoredInstances } from "./issues.js";
 import { DocumentLinter } from "./linter.js";
 import type { TextFormat } from "./markdown.js";
@@ -23,6 +24,8 @@ import type { Parser } from "./parser.js";
 import {
   Methods,
   type ClientSettings,
+  type FixAllParams,
+  type FixAllResult,
   type LintStats,
   type LintTextParams,
   type LintTextResult,
@@ -31,10 +34,15 @@ import {
   type RewriteAllParams,
   type RewriteAllResult,
   type RewriteParams,
+  type RewriteProgressParams,
   type RewriteResult,
   type SettingsSection,
 } from "./protocol.js";
-import { rewriteDocument, rewritePassage } from "./rewrite/index.js";
+import {
+  rewriteDocument,
+  rewritePassage,
+  type Rewrite,
+} from "./rewrite/index.js";
 import {
   completionFor,
   type Complete,
@@ -319,6 +327,26 @@ const rewrite =
     return { ...result, range: rangeOf(document, result.start, result.end) };
   };
 
+const fixAll =
+  (workspace: Workspace) =>
+  async ({ uri, scope = {} }: FixAllParams): Promise<FixAllResult> => {
+    const document = workspace.documents.get(uri);
+    if (document == null) {
+      throw new Error(`${uri} is not open.`);
+    }
+
+    const lint = await workspace.lintFor(document);
+    const problems = problemsInScope(lint(document.getText()), scope);
+    const edits = fixEditsFor(problems);
+    return {
+      edits: edits.map(({ start, end, text }) => ({
+        range: rangeOf(document, start, end),
+        newText: text,
+      })),
+      remaining: problems.length - edits.length,
+    };
+  };
+
 const concurrencyFor: Record<ProviderSettings["kind"], number> = {
   ollama: 1,
   openrouter: 3,
@@ -327,7 +355,7 @@ const concurrencyFor: Record<ProviderSettings["kind"], number> = {
 const rewriteAll =
   (workspace: Workspace, connection: Connection) =>
   async (
-    { uri, provider }: RewriteAllParams,
+    { uri, provider, scope }: RewriteAllParams,
     token: CancellationToken,
   ): Promise<RewriteAllResult> => {
     const document = workspace.documents.get(uri);
@@ -335,23 +363,31 @@ const rewriteAll =
       throw new Error(`${uri} is not open.`);
     }
 
+    const located = (result: Rewrite): RewriteResult => ({
+      ...result,
+      range: rangeOf(document, result.start, result.end),
+    });
+    const notify = (params: RewriteProgressParams) => {
+      connection
+        .sendNotification(Methods.rewriteProgress, params)
+        .catch(() => undefined);
+    };
     const rewrites = await rewriteDocument(document.getText(), {
       complete: workspace.completionFor(provider),
       lint: await workspace.lintFor(document),
       signal: abortedWith(token),
       concurrency: concurrencyFor[provider.kind],
-      onProgress: ({ done, total }) => {
-        connection
-          .sendNotification(Methods.rewriteProgress, { uri, done, total })
-          .catch(() => undefined);
+      ...(scope == null ? {} : { scope }),
+      onProgress: (progress) => {
+        if (progress.done === 0) {
+          notify({ uri, ...progress });
+        }
+      },
+      onRewrite: (result, index, progress) => {
+        notify({ uri, ...progress, rewrite: located(result), index });
       },
     });
-    return {
-      rewrites: rewrites.map((result) => ({
-        ...result,
-        range: rangeOf(document, result.start, result.end),
-      })),
-    };
+    return { rewrites: rewrites.map(located) };
   };
 
 const listenToDocuments = (workspace: Workspace, connection: Connection) => {
@@ -397,6 +433,7 @@ export const attachLanguageServer = (
   connection.onRequest(Methods.lintText, lintText(workspace));
   connection.onRequest(Methods.rewrite, rewrite(workspace));
   connection.onRequest(Methods.rewriteAll, rewriteAll(workspace, connection));
+  connection.onRequest(Methods.fixAll, fixAll(workspace));
   listenToConfiguration(workspace, connection);
   listenToDocuments(workspace, connection);
   return workspace;

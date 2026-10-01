@@ -5,6 +5,12 @@ import {
   type Rewrite,
   type RewriteDependencies,
 } from "./index.js";
+import { problemsInScope, type Scope } from "../fixes.js";
+import {
+  chunksWithProblems,
+  defaultChunkLimits,
+  type ChunkLimits,
+} from "./chunks.js";
 import { passageAround, type Span } from "./prompt.js";
 
 export type RewriteProgress = { done: number; total: number };
@@ -12,6 +18,13 @@ export type RewriteProgress = { done: number; total: number };
 export type DocumentRewriteDependencies = RewriteDependencies & {
   concurrency?: number;
   onProgress?: (progress: RewriteProgress) => void;
+  onRewrite?: (
+    rewrite: Rewrite,
+    index: number,
+    progress: RewriteProgress,
+  ) => void;
+  scope?: Scope;
+  limits?: ChunkLimits;
 };
 
 const byStart = (one: Span, other: Span) => one.start - other.start;
@@ -95,19 +108,31 @@ const rewriteOrExplain =
 
 export const rewriteDocument = async (
   text: string,
-  { concurrency = 1, onProgress, ...dependencies }: DocumentRewriteDependencies,
+  {
+    concurrency = 1,
+    onProgress,
+    onRewrite,
+    scope = {},
+    limits = defaultChunkLimits,
+    ...dependencies
+  }: DocumentRewriteDependencies,
 ): Promise<Rewrite[]> => {
-  const problems = await dependencies.lint(text);
-  const spans = passagesWithProblems(text, problems);
+  const problems = problemsInScope(await dependencies.lint(text), scope);
+  const spans = chunksWithProblems(text, problems, limits);
   const rewrite = rewriteOrExplain(text, problems, dependencies);
   let done = 0;
   onProgress?.({ done, total: spans.length });
-  return inParallel(spans, concurrency, async (span) => {
-    const result = await rewrite(span);
-    done += 1;
-    onProgress?.({ done, total: spans.length });
-    return result;
-  });
+  return inParallel(
+    spans.map((span, index) => ({ span, index })),
+    concurrency,
+    async ({ span, index }) => {
+      const result = await rewrite(span);
+      done += 1;
+      onRewrite?.(result, index, { done, total: spans.length });
+      onProgress?.({ done, total: spans.length });
+      return result;
+    },
+  );
 };
 
 export type Replacement = Span & { replacement: string };

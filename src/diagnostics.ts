@@ -10,6 +10,7 @@ import {
 } from "vscode-languageserver";
 import type { TextDocument } from "vscode-languageserver-textdocument";
 import type { ActiveSeverity, ResolvedConfig } from "./config.js";
+import type { Scope } from "./fixes.js";
 import { instanceOf } from "./issues.js";
 import {
   Commands,
@@ -130,25 +131,58 @@ const ignoreInstanceAction = (
     }),
   });
 
-const rewriteAllAction = (uri: string) =>
-  commandAction("Rewrite all issues with AI", Commands.rewriteAll, { uri });
-
 export type ActionOptions = { rewrite: boolean };
+
+type Level = { title: string; scope: Scope; label: string };
+
+const matching = (all: DiagnosticData[], scope: Scope) =>
+  all.filter(
+    (data) =>
+      (scope.rule == null || data.rule === scope.rule) &&
+      (scope.case == null || data.case === scope.case),
+  ).length;
+
+const levelsOf = ({ rule, case: key }: DiagnosticData): Level[] => [
+  ...(key == null
+    ? []
+    : [
+        {
+          title: `Apply all "${key}"`,
+          scope: { rule, case: key },
+          label: `"${key}"`,
+        },
+      ]),
+  { title: `Apply all ${rule}`, scope: { rule }, label: rule },
+  { title: "Apply all issues in this file", scope: {}, label: "this file" },
+];
+
+const applyAllActions = (
+  uri: string,
+  data: DiagnosticData,
+  all: DiagnosticData[],
+) =>
+  levelsOf(data)
+    .map((level) => ({ ...level, count: matching(all, level.scope) }))
+    .filter(({ count }) => count > 1)
+    .map(({ title, scope, label, count }) =>
+      commandAction(`${title} (${count})…`, Commands.applyAll, {
+        uri,
+        scope,
+        label,
+      }),
+    );
 
 const actionsFor = (
   document: TextDocument,
   diagnostic: Diagnostic,
   { rewrite }: ActionOptions,
+  all: DiagnosticData[],
 ): CodeAction[] => {
   const data = diagnostic.data as DiagnosticData;
   return [
     ...data.fixes.map(quickFix(document, diagnostic, data.rule)),
-    ...(rewrite
-      ? [
-          rewriteAction(document.uri, diagnostic),
-          rewriteAllAction(document.uri),
-        ]
-      : []),
+    ...(rewrite ? [rewriteAction(document.uri, diagnostic)] : []),
+    ...applyAllActions(document.uri, data, all),
     ignoreInstanceAction(document, diagnostic, data.rule),
     ...ignoreCaseAction(data),
     commandAction(`Turn off ${data.rule}`, Commands.disableRule, {
@@ -171,10 +205,11 @@ export const codeActionsFor = (
   diagnostics: Diagnostic[],
   range: Range,
   options: ActionOptions,
-): CodeAction[] =>
-  diagnostics
-    .filter(
-      (diagnostic) => isOurs(diagnostic) && overlaps(diagnostic.range, range),
-    )
-    .flatMap((diagnostic) => actionsFor(document, diagnostic, options))
+): CodeAction[] => {
+  const ours = diagnostics.filter(isOurs);
+  const all = ours.map((diagnostic) => diagnostic.data as DiagnosticData);
+  return ours
+    .filter((diagnostic) => overlaps(diagnostic.range, range))
+    .flatMap((diagnostic) => actionsFor(document, diagnostic, options, all))
     .filter(firstOfEachTitle);
+};

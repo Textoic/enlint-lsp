@@ -26,6 +26,7 @@ import {
   type LintStats,
   type LintTextResult,
   type RewriteAllResult,
+  type FixAllResult,
   type RewriteProgressParams,
   type RewriteResult,
 } from "../src/index.js";
@@ -187,12 +188,11 @@ describe("language server", () => {
     assert.deepEqual(titlesOf(actions), [
       'Replace with "filthy" (no-explained-intensifiers)',
       "Rewrite this passage with AI",
-      "Rewrite all issues with AI",
       "Ignore this instance",
       'Ignore "dirty" everywhere',
       "Turn off no-explained-intensifiers",
     ]);
-    const instance = actions[3].command;
+    const instance = actions[2].command;
     assert.equal(instance?.command, Commands.ignoreInstance);
     assert.deepEqual(instance?.arguments, [
       {
@@ -204,11 +204,70 @@ describe("language server", () => {
         },
       },
     ]);
-    const ignore = actions[4].command;
+    const ignore = actions[3].command;
     assert.equal(ignore?.command, Commands.ignoreCase);
     assert.deepEqual(ignore?.arguments, [
       { rule: "no-explained-intensifiers", case: "dirty" },
     ]);
+  });
+
+  it("offers to apply all at the case, rule and file level when there is more than one", async () => {
+    const uri = "file:///virtual/apply-all.md";
+    const diagnostics = await open(
+      client,
+      uri,
+      "The room was very dirty. The hall was very dirty. The yard was very big.",
+    );
+    const [first] = diagnostics;
+    const actions: CodeAction[] = await client.connection.sendRequest(
+      "textDocument/codeAction",
+      {
+        textDocument: { uri },
+        range: first.range,
+        context: { diagnostics: [first] },
+      },
+    );
+    const applyAll = actions.filter(
+      ({ command }) => command?.command === Commands.applyAll,
+    );
+    assert.deepEqual(titlesOf(applyAll), [
+      'Apply all "dirty" (2)…',
+      "Apply all no-explained-intensifiers (3)…",
+      "Apply all issues in this file (3)…",
+    ]);
+    assert.deepEqual(applyAll[0].command?.arguments, [
+      {
+        uri,
+        scope: { rule: "no-explained-intensifiers", case: "dirty" },
+        label: '"dirty"',
+      },
+    ]);
+  });
+
+  it("returns the fix of every problem in a scope", async () => {
+    const uri = "file:///virtual/fix-all.md";
+    await open(
+      client,
+      uri,
+      `The room was very dirty. The yard was very big.\n\n${PASSIVE}`,
+    );
+    const dirty: FixAllResult = await client.connection.sendRequest(
+      Methods.fixAll,
+      { uri, scope: { rule: "no-explained-intensifiers", case: "dirty" } },
+    );
+    assert.deepEqual(
+      dirty.edits.map(({ newText }) => newText),
+      ["filthy"],
+    );
+    assert.equal(dirty.remaining, 0);
+    const everything: FixAllResult = await client.connection.sendRequest(
+      Methods.fixAll,
+      { uri },
+    );
+    assert.deepEqual(
+      everything.edits.map(({ newText }) => newText),
+      ["filthy", "huge", "The committee wrote the report"],
+    );
   });
 
   it("hides an ignored instance in that document only", async () => {
@@ -319,12 +378,10 @@ describe("language server", () => {
 });
 
 describe("rewrite all", () => {
-  it("rewrites every paragraph with a problem and reports progress", async () => {
-    const fixes: Complete = ({ messages }) =>
+  it("rewrites nearby paragraphs as one chunk and reports each result", async () => {
+    const fixes: Complete = () =>
       Promise.resolve({
-        content: (messages.at(-1)?.content ?? "").includes("written")
-          ? "The committee wrote the report."
-          : "The room was filthy.",
+        content: `The room was filthy.\n\nThis is fine.\n\nThe committee wrote the report.`,
         truncated: false,
       });
     const client = await start({ debounceMs: 100 }, "", fixes);
@@ -352,15 +409,22 @@ describe("rewrite all", () => {
         range.start.line,
       ]),
       [
-        ["The room was filthy.", true, 0],
-        ["The committee wrote the report.", true, 4],
+        [
+          "The room was filthy.\n\nThis is fine.\n\nThe committee wrote the report.",
+          true,
+          0,
+        ],
       ],
     );
-    await until(() => progress.length === 3);
+    await until(() => progress.length === 2);
     assert.deepEqual(
-      progress.map(({ done, total }) => `${done}/${total}`),
-      ["0/2", "1/2", "2/2"],
+      progress.map(({ done, total, index }) => [`${done}/${total}`, index]),
+      [
+        ["0/1", undefined],
+        ["1/1", 0],
+      ],
     );
+    assert.equal(progress[1].rewrite?.accepted, true);
     client.connection.dispose();
   });
 });

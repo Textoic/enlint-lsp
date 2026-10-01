@@ -1,6 +1,7 @@
 import type { LintError } from "@textoic/enlint/types";
 import type { Range } from "vscode-languageserver";
 import type { TextoicConfig } from "./config.js";
+import type { ApplyAllMode, Scope } from "./fixes.js";
 import type { IgnoredInstance, IgnoredInstances } from "./issues.js";
 import type { Rewrite } from "./rewrite/index.js";
 import type { ProviderSettings } from "./rewrite/providers.js";
@@ -12,6 +13,7 @@ export const Methods = {
   rewrite: "enlint/rewrite",
   rewriteAll: "enlint/rewriteAll",
   rewriteProgress: "enlint/rewriteProgress",
+  fixAll: "enlint/fixAll",
 } as const;
 
 export const Commands = {
@@ -20,6 +22,7 @@ export const Commands = {
   rewrite: "textoic.rewrite",
   rewriteAll: "textoic.rewriteAll",
   ignoreInstance: "textoic.ignoreInstance",
+  applyAll: "textoic.applyAll",
 } as const;
 
 export const diagnosticSource = "textoic";
@@ -75,7 +78,7 @@ export type RewriteParams = RewriteArguments & { provider: ProviderSettings };
 
 export type RewriteResult = Rewrite & { range: Range };
 
-export type RewriteAllArguments = { uri: string };
+export type RewriteAllArguments = { uri: string; scope?: Scope };
 
 export type RewriteAllParams = RewriteAllArguments & {
   provider: ProviderSettings;
@@ -87,6 +90,21 @@ export type RewriteProgressParams = {
   uri: string;
   done: number;
   total: number;
+  rewrite?: RewriteResult;
+  index?: number;
+};
+
+export type FixAllParams = { uri: string; scope?: Scope };
+
+export type FixAllEdit = { range: Range; newText: string };
+
+export type FixAllResult = { edits: FixAllEdit[]; remaining: number };
+
+export type ApplyAllArguments = {
+  uri: string;
+  scope: Scope;
+  label: string;
+  mode?: ApplyAllMode;
 };
 
 export type IgnoreInstanceArguments = {

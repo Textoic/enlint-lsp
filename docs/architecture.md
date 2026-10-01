@@ -7,6 +7,29 @@ finding each.
 
 ## Log
 
+### 2026-09-30, rewrite all works in chunks of about 500 words, and "apply all" fixes first
+
+One model call per paragraph failed two ways. textoic.com caps a passage at
+4,000 characters, so a pasted document with no blank lines, or one long
+paragraph, stopped the whole run. And a document of short paragraphs cost one
+call each. `rewriteDocument` now packs flagged paragraphs into chunks of at
+most 500 words, 3,500 characters and 40 problems (textoic.com accepts 50). 500 words is where models still return
+the whole passage and follow the guide; it is a starting point to tune, not a
+measurement. Clean paragraphs between two flagged ones join the chunk when
+they fit, because the prompt already tells the model to leave untouched words
+alone. An oversized paragraph splits at sentence ends, and a sentence that is
+still too long at spaces, but a split never lands inside a problem, since a
+problem cut in two would be sent to neither half.
+
+"Apply all" exists at three levels (a case, a rule, the file) and in two
+modes. The rules' own fixes are exact, so they apply at once without a
+preview: `enlint/fixAll` takes the first suggestion of each problem and drops
+one that overlaps a fix already taken. What a rewrite will say is unknown
+until the model answers, so the second mode applies the fixes first and then
+runs `rewriteAll` on the same scope, which by then only holds the problems no
+rule could fix. The results come back one chunk at a time for the client to
+preview.
+
 ### 2026-09-29, an ignored instance is its rule, its words and its sentence
 
 "Ignore this instance" has to survive edits elsewhere in the document, so
@@ -42,7 +65,7 @@ at a time anyway; OpenRouter runs three.
 Windows a rewrite covered the whole file from the start to the end. It now
 splits on `
 ?
-[ 	]*
+[ ]\*
 ?
 `. The last paragraph ends before trailing
 whitespace, so a rewrite keeps the file's final newline.
